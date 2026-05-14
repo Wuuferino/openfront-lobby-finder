@@ -1,43 +1,34 @@
 /* Side-panel container injected into openfront.io */
 
 #ofbt-host {
+  --ofbt-panel-w: min(420px, 90vw);
+  --ofbt-anim: 0.22s ease;
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
+  width: var(--ofbt-panel-w);
   z-index: 2147483646;
-  display: flex;
-  align-items: stretch;
   pointer-events: none;
-  /* the toggle and panel re-enable pointer-events on themselves */
-  transition: transform 0.22s ease;
+  /* The toggle and panel re-enable pointer-events on themselves */
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
 }
 
 #ofbt-host.ofbt-hidden {
-  /* fully out of the way during gameplay */
-  transform: translateX(110%);
-  pointer-events: none;
+  display: none;
 }
 
-#ofbt-host.ofbt-collapsed #ofbt-panel {
-  transform: translateX(100%);
-  opacity: 0;
-}
-
-#ofbt-host.ofbt-open #ofbt-panel {
-  transform: translateX(0);
-  opacity: 1;
-}
-
+/* Toggle button — absolutely positioned so it tracks the panel edge. */
 #ofbt-toggle {
   pointer-events: auto;
-  align-self: center;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   width: 22px;
   height: 64px;
-  margin-right: -1px;
   border: 1px solid #2a3340;
   border-right: none;
   border-radius: 8px 0 0 8px;
@@ -53,8 +44,14 @@
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   transition:
+    right var(--ofbt-anim),
     background 0.15s ease,
-    border-color 0.15s ease;
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+#ofbt-host.ofbt-open #ofbt-toggle {
+  right: var(--ofbt-panel-w);
 }
 
 #ofbt-toggle:hover {
@@ -67,16 +64,26 @@
   line-height: 1;
 }
 
+/* Panel — slides in from the right. */
 #ofbt-panel {
   pointer-events: auto;
-  width: min(420px, 90vw);
-  height: 100%;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--ofbt-panel-w) * -1);
+  width: var(--ofbt-panel-w);
   background: #0e1116;
   border-left: 1px solid #2a3340;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
   transition:
-    transform 0.22s ease,
-    opacity 0.22s ease;
+    right var(--ofbt-anim),
+    opacity var(--ofbt-anim);
+  opacity: 0;
+}
+
+#ofbt-host.ofbt-open #ofbt-panel {
+  right: 0;
+  opacity: 1;
 }
 
 #ofbt-iframe {
