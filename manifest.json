@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "OpenFront Lobby Targeter",
-  "version": "0.2.0",
-  "description": "Targets OpenFront.io public lobbies by map, mode, team setup, and modifiers — with auto-join and saved profiles.",
+  "version": "0.3.0",
+  "description": "Side panel for OpenFront.io — target lobbies by map, mode, team setup, and modifiers, with auto-join. Auto-hides during gameplay.",
   "action": {
-    "default_title": "Open OpenFront Lobby Targeter",
+    "default_title": "Open OpenFront",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -21,5 +21,25 @@
   "background": {
     "service_worker": "background.js"
   },
-  "host_permissions": ["https://openfront.io/*", "wss://openfront.io/*"]
+  "content_scripts": [
+    {
+      "matches": ["https://openfront.io/*", "https://*.openfront.io/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "index.html",
+        "tool.js",
+        "maps.js",
+        "style.css",
+        "icons/*"
+      ],
+      "matches": ["https://openfront.io/*", "https://*.openfront.io/*"]
+    }
+  ]
 }

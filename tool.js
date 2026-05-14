@@ -577,7 +577,25 @@ function renderMatch(match, cfg) {
   }
 }
 
+// True when the tool is running inside the side-panel iframe injected by
+// the extension's content script. In that case we ask the parent tab (which
+// is already on openfront.io) to navigate, rather than spawning a new tab.
+const EMBEDDED =
+  new URLSearchParams(location.search).get("embed") === "1" ||
+  window.parent !== window;
+
 function openJoin(gameID, cfg) {
+  if (EMBEDDED) {
+    try {
+      window.parent.postMessage(
+        { source: "ofbt", type: "join", gameID, newTab: cfg.newTab },
+        "*",
+      );
+      return;
+    } catch {
+      // fall through to normal nav if postMessage fails
+    }
+  }
   const url = `https://${cfg.host}/game/${gameID}`;
   if (cfg.newTab) {
     const win = window.open(url, "_blank", "noopener,noreferrer");
@@ -590,6 +608,7 @@ function openJoin(gameID, cfg) {
 }
 
 function init() {
+  if (EMBEDDED) document.body.classList.add("embed");
   populateSelects();
   buildModifiers();
   loadFilter();
