@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenFront Lobby Watcher — 2 Teams / 40+ per side</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>OpenFront Lobby Watcher</h1>
+      <p class="sub">
+        Watches the public lobby feed and flags any
+        <strong>Team</strong> game with exactly
+        <strong>2 teams</strong> and
+        <strong>40+ players per team</strong> (max&nbsp;players&nbsp;≥&nbsp;80).
+      </p>
+    </header>
+
+    <section class="controls">
+      <div class="row">
+        <label>
+          Host
+          <input id="host" type="text" value="openfront.io" />
+        </label>
+        <label>
+          Worker
+          <input id="worker" type="number" min="0" max="40" value="0" />
+        </label>
+        <label>
+          Teams
+          <input id="teams" type="number" min="2" max="20" value="2" />
+        </label>
+        <label>
+          Min players / team
+          <input id="perTeam" type="number" min="1" max="200" value="40" />
+        </label>
+        <label class="checkbox">
+          <input id="autoJoin" type="checkbox" />
+          Auto-join when matched
+        </label>
+        <label class="checkbox">
+          <input id="newTab" type="checkbox" checked />
+          Open in new tab
+        </label>
+      </div>
+      <div class="row">
+        <button id="connect" class="primary">Start watching</button>
+        <button id="disconnect" disabled>Stop</button>
+        <span id="status" class="status dim">idle</span>
+      </div>
+    </section>
+
+    <section class="match-section">
+      <h2>Match found</h2>
+      <div id="match" class="empty">No matching lobby yet — waiting…</div>
+    </section>
+
+    <section>
+      <h2>All public lobbies</h2>
+      <div id="lobbies" class="empty">No data yet.</div>
+    </section>
+
+    <footer>
+      <p>
+        Reads the same WebSocket the official client uses
+        (<code>/wN/lobbies</code>). Joining opens
+        <code>https://&lt;host&gt;/game/&lt;gameID&gt;</code>, which the home
+        page picks up and routes into the lobby.
+      </p>
+    </footer>
+
+    <script src="tool.js"></script>
+  </body>
+</html>
