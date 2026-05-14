@@ -33,6 +33,16 @@
           <button id="disconnect" disabled>Stop</button>
           <span id="status" class="status dim">idle</span>
         </div>
+        <div class="row auto-join-row">
+          <label class="checkbox big-check">
+            <input id="autoJoin" type="checkbox" />
+            <strong>Auto-join when a lobby matches</strong>
+          </label>
+          <label class="checkbox new-tab-row">
+            <input id="newTab" type="checkbox" checked />
+            Open in new tab
+          </label>
+        </div>
       </details>
 
       <details open>
@@ -121,20 +131,6 @@
               step="0.1"
               placeholder="any"
             />
-          </label>
-        </div>
-      </details>
-
-      <details open>
-        <summary><span class="section-title">Auto-join</span></summary>
-        <div class="row">
-          <label class="checkbox">
-            <input id="autoJoin" type="checkbox" />
-            Auto-join when a lobby matches
-          </label>
-          <label class="checkbox">
-            <input id="newTab" type="checkbox" checked />
-            Open in new tab (else redirect this tab)
           </label>
         </div>
       </details>

@@ -78,6 +78,28 @@ body.embed footer {
   display: none;
 }
 
+body.embed .new-tab-row {
+  display: none;
+}
+
+/* Prominent auto-join row */
+.auto-join-row {
+  background: rgba(79, 158, 255, 0.08);
+  border: 1px solid rgba(79, 158, 255, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.big-check {
+  font-size: 14px;
+}
+
+.big-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--good);
+}
+
 header h1 {
   margin: 0 0 6px;
   font-size: 22px;

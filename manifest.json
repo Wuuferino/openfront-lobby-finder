@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenFront Lobby Targeter",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Side panel for OpenFront.io — target lobbies by map, mode, team setup, and modifiers, with auto-join. Auto-hides during gameplay.",
   "action": {
     "default_title": "Open OpenFront",
