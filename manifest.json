@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "OpenFront Lobby Targeter",
+  "version": "0.2.0",
+  "description": "Targets OpenFront.io public lobbies by map, mode, team setup, and modifiers — with auto-join and saved profiles.",
+  "action": {
+    "default_title": "Open OpenFront Lobby Targeter",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": ["https://openfront.io/*", "wss://openfront.io/*"]
+}
