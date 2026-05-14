@@ -7,10 +7,10 @@
   --text: #e6edf3;
   --dim: #8b949e;
   --accent: #4f9eff;
-  --accent-2: #6cd06c;
   --warn: #ffb547;
   --bad: #ff6b6b;
   --good: #28d17c;
+  --purple: #c97aff;
 }
 
 * {
@@ -18,7 +18,7 @@
 }
 
 body {
-  margin: 0;
+  margin: 0 auto;
   background: var(--bg);
   color: var(--text);
   font-family:
@@ -27,7 +27,6 @@ body {
   line-height: 1.45;
   padding: 24px;
   max-width: 1100px;
-  margin: 0 auto;
 }
 
 header h1 {
@@ -57,18 +56,60 @@ h2 {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px;
+  padding: 6px 14px 14px;
+}
+
+details {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+
+details:first-of-type {
+  border-top: none;
+}
+
+details summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
+details summary::before {
+  content: "▶";
+  font-size: 10px;
+  color: var(--dim);
+  transition: transform 0.15s ease;
+}
+
+details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.section-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 8px 0;
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  align-items: center;
-}
-
-.row + .row {
-  margin-top: 12px;
+  align-items: end;
+  margin-top: 10px;
 }
 
 label {
@@ -77,6 +118,11 @@ label {
   font-size: 12px;
   color: var(--dim);
   gap: 4px;
+}
+
+label.grow {
+  flex: 1;
+  min-width: 180px;
 }
 
 label.checkbox {
@@ -88,7 +134,8 @@ label.checkbox {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -100,6 +147,10 @@ input[type="number"] {
 
 input[type="text"] {
   min-width: 160px;
+}
+
+select {
+  min-width: 140px;
 }
 
 button {
@@ -162,6 +213,98 @@ button.join:hover {
 .status.err {
   color: var(--bad);
   border-color: var(--bad);
+}
+
+.modifiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.modifier {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.modifier .name {
+  font-size: 13px;
+}
+
+.tri {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tri button {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.tri button:first-child {
+  border-left: none;
+}
+
+.tri button.on-any {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.tri button.on-require {
+  background: var(--good);
+  color: #04210f;
+  font-weight: 600;
+}
+
+.tri button.on-exclude {
+  background: var(--bad);
+  color: #2a0606;
+  font-weight: 600;
+}
+
+.profile-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px 4px 12px;
+  font-size: 13px;
+}
+
+.profile .name {
+  cursor: pointer;
+}
+
+.profile .delete {
+  background: transparent;
+  border: none;
+  color: var(--bad);
+  padding: 0 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .empty {
@@ -230,8 +373,8 @@ button.join:hover {
 }
 
 .badge.special {
-  color: #c97aff;
-  border-color: #c97aff;
+  color: var(--purple);
+  border-color: var(--purple);
 }
 
 .badge.hit {

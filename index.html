@@ -3,52 +3,153 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>OpenFront Lobby Watcher — 2 Teams / 40+ per side</title>
+    <title>OpenFront Lobby Targeter</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header>
-      <h1>OpenFront Lobby Watcher</h1>
+      <h1>OpenFront Lobby Targeter</h1>
       <p class="sub">
-        Watches the public lobby feed and flags any
-        <strong>Team</strong> game with exactly
-        <strong>2 teams</strong> and
-        <strong>40+ players per team</strong> (max&nbsp;players&nbsp;≥&nbsp;80).
+        Watches the public lobby feed and flags any lobby that matches your
+        exact targeting: map, mode, team setup, player counts, and modifiers.
+        Click <strong>Join</strong> on a match or enable
+        <strong>Auto-join</strong> to fire automatically.
       </p>
     </header>
 
     <section class="controls">
-      <div class="row">
-        <label>
-          Host
-          <input id="host" type="text" value="openfront.io" />
-        </label>
-        <label>
-          Worker
-          <input id="worker" type="number" min="0" max="40" value="0" />
-        </label>
-        <label>
-          Teams
-          <input id="teams" type="number" min="2" max="20" value="2" />
-        </label>
-        <label>
-          Min players / team
-          <input id="perTeam" type="number" min="1" max="200" value="40" />
-        </label>
-        <label class="checkbox">
-          <input id="autoJoin" type="checkbox" />
-          Auto-join when matched
-        </label>
-        <label class="checkbox">
-          <input id="newTab" type="checkbox" checked />
-          Open in new tab
-        </label>
-      </div>
-      <div class="row">
-        <button id="connect" class="primary">Start watching</button>
-        <button id="disconnect" disabled>Stop</button>
-        <span id="status" class="status dim">idle</span>
-      </div>
+      <details open>
+        <summary><span class="section-title">Connection</span></summary>
+        <div class="row">
+          <label>
+            Host
+            <input id="host" type="text" value="openfront.io" />
+          </label>
+          <label>
+            Worker
+            <input id="worker" type="number" min="0" max="40" value="0" />
+          </label>
+          <button id="connect" class="primary">Start watching</button>
+          <button id="disconnect" disabled>Stop</button>
+          <span id="status" class="status dim">idle</span>
+        </div>
+      </details>
+
+      <details open>
+        <summary><span class="section-title">Target — map &amp; mode</span></summary>
+        <div class="row">
+          <label>
+            Game mode
+            <select id="mode">
+              <option value="any">Any</option>
+              <option value="Team">Team</option>
+              <option value="Free For All">FFA</option>
+            </select>
+          </label>
+          <label class="grow">
+            Map
+            <select id="map"></select>
+          </label>
+          <label>
+            Map size
+            <select id="mapSize">
+              <option value="any">Any</option>
+              <option value="Normal">Normal</option>
+              <option value="Compact">Compact</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            Team config
+            <select id="teamConfig"></select>
+          </label>
+          <label>
+            Min players / team
+            <input id="perTeam" type="number" min="0" max="200" value="0" />
+          </label>
+          <label>
+            Min total players
+            <input id="minTotal" type="number" min="0" max="400" value="0" />
+          </label>
+          <label>
+            Max total players
+            <input
+              id="maxTotal"
+              type="number"
+              min="0"
+              max="400"
+              placeholder="any"
+            />
+          </label>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="section-title">Modifiers</span></summary>
+        <p class="hint">
+          Pick <em>require</em> to insist a modifier is active,
+          <em>exclude</em> to skip lobbies that have it, or leave at
+          <em>any</em>.
+        </p>
+        <div id="modifiers" class="modifiers"></div>
+        <div class="row">
+          <label>
+            Starting gold ≥
+            <input id="goldMin" type="number" min="0" placeholder="any" />
+          </label>
+          <label>
+            Starting gold ≤
+            <input id="goldMax" type="number" min="0" placeholder="any" />
+          </label>
+          <label>
+            Gold multiplier ≥
+            <input
+              id="multMin"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="any"
+            />
+          </label>
+          <label>
+            Gold multiplier ≤
+            <input
+              id="multMax"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="any"
+            />
+          </label>
+        </div>
+      </details>
+
+      <details open>
+        <summary><span class="section-title">Auto-join</span></summary>
+        <div class="row">
+          <label class="checkbox">
+            <input id="autoJoin" type="checkbox" />
+            Auto-join when a lobby matches
+          </label>
+          <label class="checkbox">
+            <input id="newTab" type="checkbox" checked />
+            Open in new tab (else redirect this tab)
+          </label>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="section-title">Profiles</span></summary>
+        <div class="row">
+          <label class="grow">
+            Profile name
+            <input id="profileName" type="text" placeholder="e.g. Big Team" />
+          </label>
+          <button id="saveProfile">Save</button>
+        </div>
+        <div id="profileList" class="profile-list"></div>
+      </details>
     </section>
 
     <section class="match-section">
@@ -66,10 +167,10 @@
         Reads the same WebSocket the official client uses
         (<code>/wN/lobbies</code>). Joining opens
         <code>https://&lt;host&gt;/game/&lt;gameID&gt;</code>, which the home
-        page picks up and routes into the lobby.
+        page route picks up and feeds into the join-lobby modal.
       </p>
     </footer>
 
-    <script src="tool.js"></script>
+    <script type="module" src="tool.js"></script>
   </body>
 </html>

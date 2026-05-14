@@ -1,15 +1,30 @@
-// OpenFront lobby watcher.
+// OpenFront lobby targeter — full filter version.
 //
-// Connects to the same WebSocket the official client uses
-// (wss://<host>/wN/lobbies) and listens for the public-games broadcast.
-// A "match" is a Team game with exactly N teams and >= K players per team
-// (configurable; defaults to 2 teams, 40+ per team => maxPlayers >= 80).
+// Connects to wss://<host>/wN/lobbies (same feed the official client uses),
+// applies the user's filter, and flags or auto-joins matching lobbies.
+
+import { MAP_CATEGORIES, MODIFIERS, TEAM_PRESETS } from "./maps.js";
+
+const STORAGE_KEYS = {
+  filter: "ofbt.filter.v1",
+  profiles: "ofbt.profiles.v1",
+};
 
 const els = {
   host: document.getElementById("host"),
   worker: document.getElementById("worker"),
-  teams: document.getElementById("teams"),
+  mode: document.getElementById("mode"),
+  map: document.getElementById("map"),
+  mapSize: document.getElementById("mapSize"),
+  teamConfig: document.getElementById("teamConfig"),
   perTeam: document.getElementById("perTeam"),
+  minTotal: document.getElementById("minTotal"),
+  maxTotal: document.getElementById("maxTotal"),
+  modifiers: document.getElementById("modifiers"),
+  goldMin: document.getElementById("goldMin"),
+  goldMax: document.getElementById("goldMax"),
+  multMin: document.getElementById("multMin"),
+  multMax: document.getElementById("multMax"),
   autoJoin: document.getElementById("autoJoin"),
   newTab: document.getElementById("newTab"),
   connect: document.getElementById("connect"),
@@ -17,31 +32,224 @@ const els = {
   status: document.getElementById("status"),
   match: document.getElementById("match"),
   lobbies: document.getElementById("lobbies"),
+  profileName: document.getElementById("profileName"),
+  saveProfile: document.getElementById("saveProfile"),
+  profileList: document.getElementById("profileList"),
 };
+
+const modifierState = {}; // key -> "any" | "require" | "exclude"
+for (const m of MODIFIERS) modifierState[m.key] = "any";
 
 let ws = null;
 let reconnectTimer = null;
 let lastAutoJoinedGameId = null;
+let lastFlat = [];
+let lastServerTime = 0;
 
 function setStatus(text, kind) {
   els.status.textContent = text;
   els.status.className = "status " + (kind ?? "dim");
 }
 
-function getConfig() {
+function populateSelects() {
+  const mapSel = els.map;
+  mapSel.innerHTML = "";
+  const anyOpt = document.createElement("option");
+  anyOpt.value = "any";
+  anyOpt.textContent = "Any map";
+  mapSel.appendChild(anyOpt);
+  for (const cat of MAP_CATEGORIES) {
+    const group = document.createElement("optgroup");
+    group.label = cat.name;
+    for (const m of cat.maps) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      group.appendChild(opt);
+    }
+    mapSel.appendChild(group);
+  }
+
+  const tSel = els.teamConfig;
+  tSel.innerHTML = "";
+  for (const p of TEAM_PRESETS) {
+    const opt = document.createElement("option");
+    opt.value = p.value;
+    opt.textContent = p.label;
+    tSel.appendChild(opt);
+  }
+}
+
+function buildModifiers() {
+  els.modifiers.innerHTML = "";
+  for (const m of MODIFIERS) {
+    const row = document.createElement("div");
+    row.className = "modifier";
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = m.label;
+    row.appendChild(name);
+
+    const tri = document.createElement("div");
+    tri.className = "tri";
+    for (const state of ["any", "require", "exclude"]) {
+      const b = document.createElement("button");
+      b.dataset.state = state;
+      b.textContent = state;
+      b.addEventListener("click", () => {
+        modifierState[m.key] = state;
+        updateTri(tri, state);
+        saveFilter();
+        rerender();
+      });
+      tri.appendChild(b);
+    }
+    updateTri(tri, modifierState[m.key]);
+    row.appendChild(tri);
+    els.modifiers.appendChild(row);
+  }
+}
+
+function updateTri(tri, active) {
+  for (const b of tri.querySelectorAll("button")) {
+    b.classList.remove("on-any", "on-require", "on-exclude");
+    if (b.dataset.state === active) b.classList.add("on-" + active);
+  }
+}
+
+function getFilter() {
+  const maxTotalRaw = els.maxTotal.value.trim();
+  const goldMinRaw = els.goldMin.value.trim();
+  const goldMaxRaw = els.goldMax.value.trim();
+  const multMinRaw = els.multMin.value.trim();
+  const multMaxRaw = els.multMax.value.trim();
   return {
     host: els.host.value.trim() || "openfront.io",
     workerIdx: Math.max(0, parseInt(els.worker.value, 10) || 0),
-    teams: Math.max(2, parseInt(els.teams.value, 10) || 2),
-    perTeam: Math.max(1, parseInt(els.perTeam.value, 10) || 40),
+    mode: els.mode.value,
+    map: els.map.value,
+    mapSize: els.mapSize.value,
+    teamConfig: els.teamConfig.value,
+    perTeam: Math.max(0, parseInt(els.perTeam.value, 10) || 0),
+    minTotal: Math.max(0, parseInt(els.minTotal.value, 10) || 0),
+    maxTotal: maxTotalRaw === "" ? null : parseInt(maxTotalRaw, 10),
     autoJoin: els.autoJoin.checked,
     newTab: els.newTab.checked,
+    modifiers: { ...modifierState },
+    goldMin: goldMinRaw === "" ? null : parseFloat(goldMinRaw),
+    goldMax: goldMaxRaw === "" ? null : parseFloat(goldMaxRaw),
+    multMin: multMinRaw === "" ? null : parseFloat(multMinRaw),
+    multMax: multMaxRaw === "" ? null : parseFloat(multMaxRaw),
   };
+}
+
+function setFilter(f) {
+  if (!f) return;
+  if (f.host !== undefined) els.host.value = f.host;
+  if (f.workerIdx !== undefined) els.worker.value = f.workerIdx;
+  if (f.mode !== undefined) els.mode.value = f.mode;
+  if (f.map !== undefined) els.map.value = f.map;
+  if (f.mapSize !== undefined) els.mapSize.value = f.mapSize;
+  if (f.teamConfig !== undefined) els.teamConfig.value = f.teamConfig;
+  if (f.perTeam !== undefined) els.perTeam.value = f.perTeam;
+  if (f.minTotal !== undefined) els.minTotal.value = f.minTotal;
+  if (f.maxTotal !== undefined && f.maxTotal !== null)
+    els.maxTotal.value = f.maxTotal;
+  else els.maxTotal.value = "";
+  els.autoJoin.checked = !!f.autoJoin;
+  els.newTab.checked = f.newTab !== false;
+  if (f.modifiers) {
+    for (const m of MODIFIERS) {
+      modifierState[m.key] = f.modifiers[m.key] ?? "any";
+    }
+    for (const row of els.modifiers.querySelectorAll(".modifier")) {
+      // re-render handled below
+    }
+    buildModifiers();
+  }
+  els.goldMin.value = f.goldMin ?? "";
+  els.goldMax.value = f.goldMax ?? "";
+  els.multMin.value = f.multMin ?? "";
+  els.multMax.value = f.multMax ?? "";
+}
+
+function saveFilter() {
+  try {
+    localStorage.setItem(STORAGE_KEYS.filter, JSON.stringify(getFilter()));
+  } catch {
+    // ignore quota / privacy-mode errors
+  }
+}
+
+function loadFilter() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.filter);
+    if (raw) setFilter(JSON.parse(raw));
+  } catch {
+    // ignore parse errors
+  }
+}
+
+function loadProfiles() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.profiles) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveProfiles(p) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.profiles, JSON.stringify(p));
+  } catch {
+    // ignore
+  }
+}
+
+function renderProfiles() {
+  const profiles = loadProfiles();
+  els.profileList.innerHTML = "";
+  const names = Object.keys(profiles).sort();
+  if (names.length === 0) {
+    const note = document.createElement("span");
+    note.className = "hint";
+    note.textContent = "No saved profiles.";
+    els.profileList.appendChild(note);
+    return;
+  }
+  for (const name of names) {
+    const pill = document.createElement("div");
+    pill.className = "profile";
+    const label = document.createElement("span");
+    label.className = "name";
+    label.textContent = name;
+    label.title = "Click to load";
+    label.addEventListener("click", () => {
+      setFilter(profiles[name]);
+      saveFilter();
+      rerender();
+    });
+    pill.appendChild(label);
+
+    const del = document.createElement("button");
+    del.className = "delete";
+    del.textContent = "✕";
+    del.title = "Delete profile";
+    del.addEventListener("click", () => {
+      const p = loadProfiles();
+      delete p[name];
+      saveProfiles(p);
+      renderProfiles();
+    });
+    pill.appendChild(del);
+    els.profileList.appendChild(pill);
+  }
 }
 
 function start() {
   stop();
-  const cfg = getConfig();
+  const cfg = getFilter();
   const url = `wss://${cfg.host}/w${cfg.workerIdx}/lobbies`;
   setStatus(`connecting ${url}…`);
   try {
@@ -81,7 +289,7 @@ function stop() {
     try {
       ws.close();
     } catch {
-      // ignore close errors during teardown
+      // ignore
     }
     ws = null;
   }
@@ -98,34 +306,89 @@ function onMessage(raw) {
     return;
   }
   const games = (data && data.games) || {};
-  const flat = []
+  lastFlat = []
     .concat(games.ffa ?? [])
     .concat(games.team ?? [])
     .concat(games.special ?? []);
-  renderLobbies(flat, data.serverTime);
+  lastServerTime = data.serverTime ?? 0;
+  rerender();
+}
 
-  const cfg = getConfig();
-  const match = flat.find((g) => isMatch(g, cfg));
+function rerender() {
+  const cfg = getFilter();
+  renderLobbies(lastFlat, lastServerTime, cfg);
+  const match = lastFlat.find((g) => isMatch(g, cfg));
   renderMatch(match, cfg);
-
   if (
     match &&
     cfg.autoJoin &&
     match.gameID !== lastAutoJoinedGameId &&
-    !isStarted(match, data.serverTime)
+    !isStarted(match, lastServerTime)
   ) {
     lastAutoJoinedGameId = match.gameID;
     openJoin(match.gameID, cfg);
   }
 }
 
+function effectivePlayersPerTeam(gc) {
+  if (gc.gameMode !== "Team") return null;
+  const teams = gc.playerTeams;
+  const max = gc.maxPlayers ?? 0;
+  if (teams === "Duos") return 2;
+  if (teams === "Trios") return 3;
+  if (teams === "Quads") return 4;
+  if (teams === "Humans Vs Nations") return max; // not meaningful — skip filter
+  if (typeof teams === "number" && teams > 0)
+    return Math.floor(max / Math.max(1, teams));
+  return null;
+}
+
 function isMatch(g, cfg) {
   const gc = g.gameConfig;
   if (!gc) return false;
-  if (gc.gameMode !== "Team") return false;
-  if (gc.playerTeams !== cfg.teams) return false;
-  const maxPlayers = typeof gc.maxPlayers === "number" ? gc.maxPlayers : 0;
-  return maxPlayers >= cfg.teams * cfg.perTeam;
+
+  if (cfg.mode !== "any" && gc.gameMode !== cfg.mode) return false;
+  if (cfg.map !== "any" && gc.gameMap !== cfg.map) return false;
+  if (cfg.mapSize !== "any" && gc.gameMapSize !== cfg.mapSize) return false;
+
+  if (cfg.teamConfig !== "any") {
+    const want = cfg.teamConfig;
+    const got = gc.playerTeams;
+    if (/^\d+$/.test(want)) {
+      if (got !== parseInt(want, 10)) return false;
+    } else {
+      if (got !== want) return false;
+    }
+  }
+
+  const max = typeof gc.maxPlayers === "number" ? gc.maxPlayers : 0;
+  if (cfg.minTotal > 0 && max < cfg.minTotal) return false;
+  if (cfg.maxTotal !== null && max > cfg.maxTotal) return false;
+
+  if (cfg.perTeam > 0) {
+    const per = effectivePlayersPerTeam(gc);
+    if (per === null) return false;
+    if (per < cfg.perTeam) return false;
+  }
+
+  const mods = gc.publicGameModifiers ?? {};
+  for (const m of MODIFIERS) {
+    const state = cfg.modifiers[m.key];
+    const active = !!mods[m.key];
+    if (state === "require" && !active) return false;
+    if (state === "exclude" && active) return false;
+  }
+
+  if (cfg.goldMin !== null && (mods.startingGold ?? 0) < cfg.goldMin)
+    return false;
+  if (cfg.goldMax !== null && (mods.startingGold ?? 0) > cfg.goldMax)
+    return false;
+  if (cfg.multMin !== null && (mods.goldMultiplier ?? 1) < cfg.multMin)
+    return false;
+  if (cfg.multMax !== null && (mods.goldMultiplier ?? 1) > cfg.multMax)
+    return false;
+
+  return true;
 }
 
 function isStarted(g, serverTime) {
@@ -160,14 +423,13 @@ function fmtCountdown(g, serverTime) {
   return m > 0 ? `${m}m${s.toString().padStart(2, "0")}s` : `${s}s`;
 }
 
-function renderLobbies(games, serverTime) {
+function renderLobbies(games, serverTime, cfg) {
   if (games.length === 0) {
     els.lobbies.innerHTML = "";
     els.lobbies.className = "empty";
     els.lobbies.textContent = "No public lobbies right now.";
     return;
   }
-  const cfg = getConfig();
   els.lobbies.className = "";
   els.lobbies.innerHTML = "";
 
@@ -225,10 +487,22 @@ function renderLobby(g, serverTime, cfg) {
       badges.appendChild(b);
     }
   }
+  if (typeof mods.startingGold === "number" && mods.startingGold > 0) {
+    const b = document.createElement("span");
+    b.className = "badge";
+    b.textContent = `Gold ${(mods.startingGold / 1_000_000).toFixed(1)}M`;
+    badges.appendChild(b);
+  }
+  if (typeof mods.goldMultiplier === "number" && mods.goldMultiplier !== 1) {
+    const b = document.createElement("span");
+    b.className = "badge";
+    b.textContent = `x${mods.goldMultiplier} gold`;
+    badges.appendChild(b);
+  }
   if (matched) {
     const b = document.createElement("span");
     b.className = "badge hit";
-    b.textContent = `MATCH: ${cfg.teams}×${cfg.perTeam}+`;
+    b.textContent = "MATCH";
     badges.appendChild(b);
   }
   meta.appendChild(badges);
@@ -236,14 +510,10 @@ function renderLobby(g, serverTime, cfg) {
   const count = document.createElement("div");
   count.className = "count";
   const max = g.gameConfig?.maxPlayers ?? "?";
-  const perTeamShown =
-    g.gameConfig?.gameMode === "Team" &&
-    typeof g.gameConfig?.playerTeams === "number" &&
-    typeof g.gameConfig?.maxPlayers === "number"
-      ? ` (${Math.floor(g.gameConfig.maxPlayers / g.gameConfig.playerTeams)}/team)`
-      : "";
+  const per = effectivePlayersPerTeam(g.gameConfig ?? {});
+  const perStr = per ? ` (${per}/team)` : "";
   const cd = fmtCountdown(g, serverTime);
-  count.textContent = `${g.numClients ?? 0}/${max} players${perTeamShown}${cd ? " · starts in " + cd : ""}`;
+  count.textContent = `${g.numClients ?? 0}/${max} players${perStr}${cd ? " · starts in " + cd : ""}`;
   meta.appendChild(count);
 
   root.appendChild(meta);
@@ -259,7 +529,7 @@ function renderLobby(g, serverTime, cfg) {
   const join = document.createElement("button");
   join.className = "join";
   join.textContent = "Join";
-  join.addEventListener("click", () => openJoin(g.gameID, getConfig()));
+  join.addEventListener("click", () => openJoin(g.gameID, getFilter()));
   right.appendChild(join);
 
   root.appendChild(right);
@@ -269,7 +539,7 @@ function renderLobby(g, serverTime, cfg) {
 function renderMatch(match, cfg) {
   if (!match) {
     els.match.className = "empty";
-    els.match.textContent = `No matching lobby yet — waiting for ${cfg.teams} teams with ${cfg.perTeam}+ per team…`;
+    els.match.textContent = "No matching lobby yet — waiting…";
     return;
   }
   els.match.className = "match";
@@ -280,10 +550,11 @@ function renderMatch(match, cfg) {
   els.match.appendChild(h3);
 
   const max = match.gameConfig?.maxPlayers ?? 0;
-  const teams = match.gameConfig?.playerTeams ?? 0;
-  const per = teams ? Math.floor(max / teams) : 0;
+  const per = effectivePlayersPerTeam(match.gameConfig ?? {});
   const info = document.createElement("div");
-  info.textContent = `${match.numClients ?? 0}/${max} joined · ${teams} teams · ${per}/team max`;
+  info.textContent =
+    `${match.numClients ?? 0}/${max} joined` +
+    (per ? ` · ${per}/team max` : "");
   info.style.color = "var(--text)";
   info.style.fontSize = "13px";
   info.style.marginBottom = "10px";
@@ -311,7 +582,6 @@ function openJoin(gameID, cfg) {
   if (cfg.newTab) {
     const win = window.open(url, "_blank", "noopener,noreferrer");
     if (!win) {
-      // popup blocked — fall back to same-tab navigation
       window.location.href = url;
     }
   } else {
@@ -319,9 +589,58 @@ function openJoin(gameID, cfg) {
   }
 }
 
-els.connect.addEventListener("click", start);
-els.disconnect.addEventListener("click", stop);
-els.autoJoin.addEventListener("change", () => {
-  // arming auto-join from scratch lets a currently-shown match re-fire once
-  lastAutoJoinedGameId = null;
-});
+function init() {
+  populateSelects();
+  buildModifiers();
+  loadFilter();
+  renderProfiles();
+
+  // wire change events on every input so saving/rerender stay in sync
+  const inputs = [
+    els.host,
+    els.worker,
+    els.mode,
+    els.map,
+    els.mapSize,
+    els.teamConfig,
+    els.perTeam,
+    els.minTotal,
+    els.maxTotal,
+    els.goldMin,
+    els.goldMax,
+    els.multMin,
+    els.multMax,
+    els.autoJoin,
+    els.newTab,
+  ];
+  for (const el of inputs) {
+    el.addEventListener("change", () => {
+      saveFilter();
+      rerender();
+    });
+    el.addEventListener("input", () => {
+      saveFilter();
+    });
+  }
+
+  els.connect.addEventListener("click", start);
+  els.disconnect.addEventListener("click", stop);
+  els.autoJoin.addEventListener("change", () => {
+    // re-arm so a current match can fire once after toggling
+    lastAutoJoinedGameId = null;
+  });
+
+  els.saveProfile.addEventListener("click", () => {
+    const name = els.profileName.value.trim();
+    if (!name) return;
+    const profiles = loadProfiles();
+    profiles[name] = getFilter();
+    saveProfiles(profiles);
+    els.profileName.value = "";
+    renderProfiles();
+  });
+
+  setStatus("idle");
+}
+
+init();
