@@ -5,6 +5,7 @@ CLAUDE.md
 # part of the shipped extension and not worth versioning publicly)
 gen_icons.py
 gen_screenshot.py
+build.py
 
 # Extension signing key. The public half lives in manifest.json (intended);
 # the private half stays local and is only needed if we ever sign a CRX.
