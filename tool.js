@@ -1,4 +1,4 @@
-// OpenFront lobby targeter — full filter version.
+// OpenFront Lobby Finder — full filter version.
 //
 // Connects to wss://<host>/wN/lobbies (same feed the official client uses),
 // applies the user's filter, and flags or auto-joins matching lobbies.
@@ -14,9 +14,7 @@ const els = {
   host: document.getElementById("host"),
   worker: document.getElementById("worker"),
   mode: document.getElementById("mode"),
-  map: document.getElementById("map"),
   mapSize: document.getElementById("mapSize"),
-  teamConfig: document.getElementById("teamConfig"),
   perTeam: document.getElementById("perTeam"),
   minTotal: document.getElementById("minTotal"),
   maxTotal: document.getElementById("maxTotal"),
@@ -33,13 +31,33 @@ const els = {
   status: document.getElementById("status"),
   match: document.getElementById("match"),
   lobbies: document.getElementById("lobbies"),
+  lobbyCount: document.getElementById("lobbyCount"),
+  filterSummary: document.getElementById("filterSummary"),
+  resetFilter: document.getElementById("resetFilter"),
   profileName: document.getElementById("profileName"),
+  profileFolder: document.getElementById("profileFolder"),
+  folderSuggestions: document.getElementById("folderSuggestions"),
   saveProfile: document.getElementById("saveProfile"),
   profileList: document.getElementById("profileList"),
+  // Multi-selects
+  mapChips: document.getElementById("mapChips"),
+  mapToggle: document.getElementById("mapToggle"),
+  mapPanel: document.getElementById("mapPanel"),
+  mapOptions: document.getElementById("mapOptions"),
+  mapSearch: document.getElementById("mapSearch"),
+  mapsClear: document.getElementById("mapsClear"),
+  teamChips: document.getElementById("teamChips"),
+  teamToggle: document.getElementById("teamToggle"),
+  teamPanel: document.getElementById("teamPanel"),
+  teamOptions: document.getElementById("teamOptions"),
 };
 
 const modifierState = {}; // key -> "any" | "require" | "exclude"
 for (const m of MODIFIERS) modifierState[m.key] = "any";
+
+// Selected maps / team configs are arrays. Empty = "any".
+const selectedMaps = new Set();
+const selectedTeamConfigs = new Set();
 
 let ws = null;
 let reconnectTimer = null;
@@ -50,39 +68,207 @@ let lastFlat = [];
 let lastServerTime = 0;
 let audioCtx = null;
 
+const ALL_MAPS = MAP_CATEGORIES.flatMap((c) => c.maps);
+const TEAM_PRESET_LABEL = Object.fromEntries(
+  TEAM_PRESETS.filter((p) => p.value !== "any").map((p) => [p.value, p.label]),
+);
+
 function setStatus(text, kind) {
   els.status.textContent = text;
   els.status.className = "status " + (kind ?? "dim");
 }
 
-function populateSelects() {
-  const mapSel = els.map;
-  mapSel.innerHTML = "";
-  const anyOpt = document.createElement("option");
-  anyOpt.value = "any";
-  anyOpt.textContent = "Any map";
-  mapSel.appendChild(anyOpt);
-  for (const cat of MAP_CATEGORIES) {
-    const group = document.createElement("optgroup");
-    group.label = cat.name;
-    for (const m of cat.maps) {
-      const opt = document.createElement("option");
-      opt.value = m;
-      opt.textContent = m;
-      group.appendChild(opt);
-    }
-    mapSel.appendChild(group);
-  }
+// ---- Multi-select: maps ----
 
-  const tSel = els.teamConfig;
-  tSel.innerHTML = "";
-  for (const p of TEAM_PRESETS) {
-    const opt = document.createElement("option");
-    opt.value = p.value;
-    opt.textContent = p.label;
-    tSel.appendChild(opt);
+function buildMapOptions() {
+  els.mapOptions.innerHTML = "";
+  for (const cat of MAP_CATEGORIES) {
+    const group = document.createElement("div");
+    group.className = "ms-group";
+
+    const head = document.createElement("div");
+    head.className = "ms-group-head";
+    const title = document.createElement("span");
+    title.className = "ms-group-title";
+    title.textContent = cat.name;
+    head.appendChild(title);
+
+    const groupActions = document.createElement("div");
+    groupActions.className = "ms-group-actions";
+    const allBtn = document.createElement("button");
+    allBtn.type = "button";
+    allBtn.className = "ms-link";
+    allBtn.textContent = "All";
+    allBtn.addEventListener("click", () => {
+      for (const m of cat.maps) selectedMaps.add(m);
+      onMapsChanged();
+    });
+    groupActions.appendChild(allBtn);
+    const noneBtn = document.createElement("button");
+    noneBtn.type = "button";
+    noneBtn.className = "ms-link";
+    noneBtn.textContent = "None";
+    noneBtn.addEventListener("click", () => {
+      for (const m of cat.maps) selectedMaps.delete(m);
+      onMapsChanged();
+    });
+    groupActions.appendChild(noneBtn);
+    head.appendChild(groupActions);
+    group.appendChild(head);
+
+    const list = document.createElement("div");
+    list.className = "ms-grid";
+    for (const m of cat.maps) {
+      const lab = document.createElement("label");
+      lab.className = "ms-opt";
+      lab.dataset.map = m;
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = m;
+      input.addEventListener("change", () => {
+        if (input.checked) selectedMaps.add(m);
+        else selectedMaps.delete(m);
+        onMapsChanged();
+      });
+      lab.appendChild(input);
+      const span = document.createElement("span");
+      span.textContent = m;
+      lab.appendChild(span);
+      list.appendChild(lab);
+    }
+    group.appendChild(list);
+    els.mapOptions.appendChild(group);
   }
 }
+
+function renderMapChips() {
+  els.mapChips.innerHTML = "";
+  if (selectedMaps.size === 0) {
+    const note = document.createElement("span");
+    note.className = "ms-any";
+    note.textContent = "Any map";
+    els.mapChips.appendChild(note);
+    return;
+  }
+  for (const m of [...selectedMaps].sort()) {
+    const chip = document.createElement("span");
+    chip.className = "ms-chip";
+    const name = document.createElement("span");
+    name.textContent = m;
+    chip.appendChild(name);
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "ms-chip-x";
+    x.textContent = "×";
+    x.title = `Remove ${m}`;
+    x.addEventListener("click", () => {
+      selectedMaps.delete(m);
+      onMapsChanged();
+    });
+    chip.appendChild(x);
+    els.mapChips.appendChild(chip);
+  }
+}
+
+function syncMapOptionCheckboxes() {
+  for (const lab of els.mapOptions.querySelectorAll(".ms-opt")) {
+    const input = lab.querySelector("input");
+    input.checked = selectedMaps.has(lab.dataset.map);
+  }
+}
+
+function onMapsChanged() {
+  renderMapChips();
+  syncMapOptionCheckboxes();
+  saveFilter();
+  rerender();
+  renderFilterSummary();
+}
+
+function filterMapOptions(query) {
+  const q = query.trim().toLowerCase();
+  for (const lab of els.mapOptions.querySelectorAll(".ms-opt")) {
+    const visible = !q || lab.dataset.map.toLowerCase().includes(q);
+    lab.classList.toggle("hidden", !visible);
+  }
+  for (const group of els.mapOptions.querySelectorAll(".ms-group")) {
+    const hasVisible = !!group.querySelector(".ms-opt:not(.hidden)");
+    group.classList.toggle("hidden", !hasVisible);
+  }
+}
+
+// ---- Multi-select: team configs ----
+
+function buildTeamOptions() {
+  els.teamOptions.innerHTML = "";
+  const grid = document.createElement("div");
+  grid.className = "ms-grid";
+  for (const p of TEAM_PRESETS) {
+    if (p.value === "any") continue; // empty selection = any
+    const lab = document.createElement("label");
+    lab.className = "ms-opt";
+    lab.dataset.team = p.value;
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = p.value;
+    input.addEventListener("change", () => {
+      if (input.checked) selectedTeamConfigs.add(p.value);
+      else selectedTeamConfigs.delete(p.value);
+      onTeamsChanged();
+    });
+    lab.appendChild(input);
+    const span = document.createElement("span");
+    span.textContent = p.label;
+    lab.appendChild(span);
+    grid.appendChild(lab);
+  }
+  els.teamOptions.appendChild(grid);
+}
+
+function renderTeamChips() {
+  els.teamChips.innerHTML = "";
+  if (selectedTeamConfigs.size === 0) {
+    const note = document.createElement("span");
+    note.className = "ms-any";
+    note.textContent = "Any team setup";
+    els.teamChips.appendChild(note);
+    return;
+  }
+  for (const v of [...selectedTeamConfigs]) {
+    const chip = document.createElement("span");
+    chip.className = "ms-chip";
+    const name = document.createElement("span");
+    name.textContent = TEAM_PRESET_LABEL[v] ?? v;
+    chip.appendChild(name);
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "ms-chip-x";
+    x.textContent = "×";
+    x.addEventListener("click", () => {
+      selectedTeamConfigs.delete(v);
+      onTeamsChanged();
+    });
+    chip.appendChild(x);
+    els.teamChips.appendChild(chip);
+  }
+}
+
+function syncTeamOptionCheckboxes() {
+  for (const lab of els.teamOptions.querySelectorAll(".ms-opt")) {
+    const input = lab.querySelector("input");
+    input.checked = selectedTeamConfigs.has(lab.dataset.team);
+  }
+}
+
+function onTeamsChanged() {
+  renderTeamChips();
+  syncTeamOptionCheckboxes();
+  saveFilter();
+  rerender();
+  renderFilterSummary();
+}
+
+// ---- Modifiers ----
 
 function buildModifiers() {
   els.modifiers.innerHTML = "";
@@ -99,6 +285,7 @@ function buildModifiers() {
     tri.className = "tri";
     for (const state of ["any", "require", "exclude"]) {
       const b = document.createElement("button");
+      b.type = "button";
       b.dataset.state = state;
       b.textContent = state;
       b.addEventListener("click", () => {
@@ -106,6 +293,7 @@ function buildModifiers() {
         updateTri(tri, state);
         saveFilter();
         rerender();
+        renderFilterSummary();
       });
       tri.appendChild(b);
     }
@@ -122,6 +310,35 @@ function updateTri(tri, active) {
   }
 }
 
+// ---- Filter get/set/migrate ----
+
+function migrateFilter(f) {
+  if (!f || typeof f !== "object") return f;
+  // Legacy single-value map → array
+  if (f.maps === undefined) {
+    if (typeof f.map === "string" && f.map !== "any" && f.map !== "") {
+      f.maps = [f.map];
+    } else {
+      f.maps = [];
+    }
+    delete f.map;
+  }
+  // Legacy single-value teamConfig → array
+  if (f.teamConfigs === undefined) {
+    if (
+      typeof f.teamConfig === "string" &&
+      f.teamConfig !== "any" &&
+      f.teamConfig !== ""
+    ) {
+      f.teamConfigs = [f.teamConfig];
+    } else {
+      f.teamConfigs = [];
+    }
+    delete f.teamConfig;
+  }
+  return f;
+}
+
 function getFilter() {
   const maxTotalRaw = els.maxTotal.value.trim();
   const goldMinRaw = els.goldMin.value.trim();
@@ -132,9 +349,9 @@ function getFilter() {
     host: els.host.value.trim() || "openfront.io",
     workerIdx: Math.max(0, parseInt(els.worker.value, 10) || 0),
     mode: els.mode.value,
-    map: els.map.value,
+    maps: [...selectedMaps],
     mapSize: els.mapSize.value,
-    teamConfig: els.teamConfig.value,
+    teamConfigs: [...selectedTeamConfigs],
     perTeam: Math.max(0, parseInt(els.perTeam.value, 10) || 0),
     minTotal: Math.max(0, parseInt(els.minTotal.value, 10) || 0),
     maxTotal: maxTotalRaw === "" ? null : parseInt(maxTotalRaw, 10),
@@ -151,12 +368,11 @@ function getFilter() {
 
 function setFilter(f) {
   if (!f) return;
+  f = migrateFilter(f);
   if (f.host !== undefined) els.host.value = f.host;
   if (f.workerIdx !== undefined) els.worker.value = f.workerIdx;
   if (f.mode !== undefined) els.mode.value = f.mode;
-  if (f.map !== undefined) els.map.value = f.map;
   if (f.mapSize !== undefined) els.mapSize.value = f.mapSize;
-  if (f.teamConfig !== undefined) els.teamConfig.value = f.teamConfig;
   if (f.perTeam !== undefined) els.perTeam.value = f.perTeam;
   if (f.minTotal !== undefined) els.minTotal.value = f.minTotal;
   if (f.maxTotal !== undefined && f.maxTotal !== null)
@@ -169,15 +385,46 @@ function setFilter(f) {
     for (const m of MODIFIERS) {
       modifierState[m.key] = f.modifiers[m.key] ?? "any";
     }
-    for (const row of els.modifiers.querySelectorAll(".modifier")) {
-      // re-render handled below
-    }
     buildModifiers();
   }
   els.goldMin.value = f.goldMin ?? "";
   els.goldMax.value = f.goldMax ?? "";
   els.multMin.value = f.multMin ?? "";
   els.multMax.value = f.multMax ?? "";
+
+  selectedMaps.clear();
+  if (Array.isArray(f.maps)) for (const m of f.maps) selectedMaps.add(m);
+  renderMapChips();
+  syncMapOptionCheckboxes();
+
+  selectedTeamConfigs.clear();
+  if (Array.isArray(f.teamConfigs))
+    for (const v of f.teamConfigs) selectedTeamConfigs.add(v);
+  renderTeamChips();
+  syncTeamOptionCheckboxes();
+}
+
+function resetFilter() {
+  els.mode.value = "any";
+  els.mapSize.value = "any";
+  els.perTeam.value = 0;
+  els.minTotal.value = 0;
+  els.maxTotal.value = "";
+  els.goldMin.value = "";
+  els.goldMax.value = "";
+  els.multMin.value = "";
+  els.multMax.value = "";
+  for (const m of MODIFIERS) modifierState[m.key] = "any";
+  buildModifiers();
+  selectedMaps.clear();
+  renderMapChips();
+  syncMapOptionCheckboxes();
+  selectedTeamConfigs.clear();
+  renderTeamChips();
+  syncTeamOptionCheckboxes();
+  saveFilter();
+  rerender();
+  renderFilterSummary();
 }
 
 function saveFilter() {
@@ -197,12 +444,38 @@ function loadFilter() {
   }
 }
 
+// ---- Profiles (with folders) ----
+
+function migrateProfileEntry(name, entry) {
+  if (!entry || typeof entry !== "object") return null;
+  // New format already has `filter` key
+  if (entry.filter && typeof entry.filter === "object") {
+    entry.filter = migrateFilter(entry.filter);
+    entry.folder = typeof entry.folder === "string" ? entry.folder : "";
+    if (typeof entry.createdAt !== "number") entry.createdAt = Date.now();
+    return entry;
+  }
+  // Legacy: the entry IS the filter
+  return {
+    filter: migrateFilter(entry),
+    folder: "",
+    createdAt: Date.now(),
+  };
+}
+
 function loadProfiles() {
+  let raw;
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.profiles) ?? "{}");
+    raw = JSON.parse(localStorage.getItem(STORAGE_KEYS.profiles) ?? "{}");
   } catch {
     return {};
   }
+  const out = {};
+  for (const [name, entry] of Object.entries(raw)) {
+    const m = migrateProfileEntry(name, entry);
+    if (m) out[name] = m;
+  }
+  return out;
 }
 
 function saveProfiles(p) {
@@ -213,45 +486,237 @@ function saveProfiles(p) {
   }
 }
 
+function summarizeFilter(f) {
+  const parts = [];
+  if (f.mode && f.mode !== "any") parts.push(f.mode);
+  if (Array.isArray(f.maps) && f.maps.length > 0) {
+    parts.push(
+      f.maps.length <= 3 ? f.maps.join(" / ") : `${f.maps.length} maps`,
+    );
+  }
+  if (Array.isArray(f.teamConfigs) && f.teamConfigs.length > 0) {
+    parts.push(
+      f.teamConfigs
+        .map((v) => TEAM_PRESET_LABEL[v] ?? v)
+        .join(" / "),
+    );
+  }
+  if (f.mapSize && f.mapSize !== "any") parts.push(f.mapSize);
+  if (f.perTeam > 0) parts.push(`≥${f.perTeam}/team`);
+  if (f.minTotal > 0) parts.push(`≥${f.minTotal} total`);
+  if (typeof f.maxTotal === "number") parts.push(`≤${f.maxTotal} total`);
+  if (f.modifiers) {
+    const req = [];
+    const exc = [];
+    for (const m of MODIFIERS) {
+      if (f.modifiers[m.key] === "require") req.push(m.label);
+      if (f.modifiers[m.key] === "exclude") exc.push(m.label);
+    }
+    if (req.length) parts.push(`+${req.join(", ")}`);
+    if (exc.length) parts.push(`−${exc.join(", ")}`);
+  }
+  return parts.length ? parts.join(" · ") : "any lobby";
+}
+
 function renderProfiles() {
   const profiles = loadProfiles();
   els.profileList.innerHTML = "";
-  const names = Object.keys(profiles).sort();
+
+  const names = Object.keys(profiles);
   if (names.length === 0) {
-    const note = document.createElement("span");
-    note.className = "hint";
-    note.textContent = "No saved profiles.";
+    const note = document.createElement("div");
+    note.className = "empty";
+    note.textContent = "No saved profiles yet. Save the current filter above.";
     els.profileList.appendChild(note);
+    refreshFolderSuggestions(profiles);
     return;
   }
-  for (const name of names) {
-    const pill = document.createElement("div");
-    pill.className = "profile";
-    const label = document.createElement("span");
-    label.className = "name";
-    label.textContent = name;
-    label.title = "Click to load";
-    label.addEventListener("click", () => {
-      setFilter(profiles[name]);
-      saveFilter();
-      rerender();
-    });
-    pill.appendChild(label);
 
-    const del = document.createElement("button");
-    del.className = "delete";
-    del.textContent = "✕";
-    del.title = "Delete profile";
-    del.addEventListener("click", () => {
-      const p = loadProfiles();
-      delete p[name];
-      saveProfiles(p);
-      renderProfiles();
-    });
-    pill.appendChild(del);
-    els.profileList.appendChild(pill);
+  // Group by folder. "" is the ungrouped bucket.
+  const byFolder = new Map();
+  for (const n of names) {
+    const f = profiles[n].folder || "";
+    if (!byFolder.has(f)) byFolder.set(f, []);
+    byFolder.get(f).push(n);
+  }
+
+  // Order: named folders alphabetically, ungrouped last.
+  const folderNames = [...byFolder.keys()]
+    .filter((f) => f !== "")
+    .sort((a, b) => a.localeCompare(b));
+  if (byFolder.has("")) folderNames.push("");
+
+  for (const folder of folderNames) {
+    const list = byFolder.get(folder).sort((a, b) => a.localeCompare(b));
+    els.profileList.appendChild(renderFolder(folder, list, profiles));
+  }
+
+  refreshFolderSuggestions(profiles);
+}
+
+function renderFolder(folder, names, profiles) {
+  const wrap = document.createElement("details");
+  wrap.className = "profile-folder";
+  wrap.open = true;
+
+  const summary = document.createElement("summary");
+  const head = document.createElement("div");
+  head.className = "folder-head";
+  const title = document.createElement("span");
+  title.className = "folder-title";
+  title.textContent = folder === "" ? "Ungrouped" : folder;
+  head.appendChild(title);
+  const badge = document.createElement("span");
+  badge.className = "folder-count";
+  badge.textContent = String(names.length);
+  head.appendChild(badge);
+  summary.appendChild(head);
+  wrap.appendChild(summary);
+
+  const cards = document.createElement("div");
+  cards.className = "profile-cards";
+  for (const name of names) {
+    cards.appendChild(renderProfileCard(name, profiles[name], profiles));
+  }
+  wrap.appendChild(cards);
+  return wrap;
+}
+
+function renderProfileCard(name, entry, allProfiles) {
+  const card = document.createElement("div");
+  card.className = "profile-card";
+
+  const main = document.createElement("div");
+  main.className = "profile-main";
+
+  const nameRow = document.createElement("div");
+  nameRow.className = "profile-name-row";
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "profile-name";
+  nameSpan.textContent = name;
+  nameRow.appendChild(nameSpan);
+  if (entry.folder) {
+    const fb = document.createElement("span");
+    fb.className = "folder-pill";
+    fb.textContent = entry.folder;
+    nameRow.appendChild(fb);
+  }
+  main.appendChild(nameRow);
+
+  const summary = document.createElement("div");
+  summary.className = "profile-summary";
+  summary.textContent = summarizeFilter(entry.filter);
+  main.appendChild(summary);
+
+  card.appendChild(main);
+
+  const actions = document.createElement("div");
+  actions.className = "profile-actions";
+
+  const loadBtn = document.createElement("button");
+  loadBtn.type = "button";
+  loadBtn.className = "primary";
+  loadBtn.textContent = "Load";
+  loadBtn.addEventListener("click", () => {
+    setFilter(entry.filter);
+    saveFilter();
+    rerender();
+    renderFilterSummary();
+  });
+  actions.appendChild(loadBtn);
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.title = "Rename or move to another folder";
+  editBtn.textContent = "Edit";
+  editBtn.addEventListener("click", () => editProfile(name, entry, allProfiles));
+  actions.appendChild(editBtn);
+
+  const updateBtn = document.createElement("button");
+  updateBtn.type = "button";
+  updateBtn.title = "Replace this profile with the current filter";
+  updateBtn.textContent = "Update";
+  updateBtn.addEventListener("click", () => {
+    const profiles = loadProfiles();
+    if (!profiles[name]) return;
+    profiles[name].filter = getFilter();
+    saveProfiles(profiles);
+    renderProfiles();
+  });
+  actions.appendChild(updateBtn);
+
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "danger";
+  del.textContent = "Delete";
+  del.addEventListener("click", () => {
+    if (!confirm(`Delete profile "${name}"?`)) return;
+    const profiles = loadProfiles();
+    delete profiles[name];
+    saveProfiles(profiles);
+    renderProfiles();
+  });
+  actions.appendChild(del);
+
+  card.appendChild(actions);
+  return card;
+}
+
+function editProfile(name, entry, allProfiles) {
+  const newName = (
+    prompt("Rename profile (leave blank to keep)", name) ?? name
+  ).trim();
+  const folderInput = prompt(
+    "Folder for this profile (blank for ungrouped)",
+    entry.folder ?? "",
+  );
+  if (folderInput === null) return; // cancel
+  const finalName = newName || name;
+  const profiles = loadProfiles();
+  if (finalName !== name) {
+    if (profiles[finalName] && finalName !== name) {
+      alert(`A profile named "${finalName}" already exists.`);
+      return;
+    }
+    delete profiles[name];
+  }
+  profiles[finalName] = {
+    ...entry,
+    folder: folderInput.trim(),
+  };
+  saveProfiles(profiles);
+  renderProfiles();
+}
+
+function refreshFolderSuggestions(profiles) {
+  els.folderSuggestions.innerHTML = "";
+  const folders = new Set();
+  for (const e of Object.values(profiles)) {
+    if (e.folder) folders.add(e.folder);
+  }
+  for (const f of [...folders].sort()) {
+    const opt = document.createElement("option");
+    opt.value = f;
+    els.folderSuggestions.appendChild(opt);
   }
 }
+
+// ---- Filter summary line ----
+
+function renderFilterSummary() {
+  const summary = summarizeFilter(getFilter());
+  els.filterSummary.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "fs-label";
+  label.textContent = "Hunting:";
+  els.filterSummary.appendChild(label);
+  const body = document.createElement("span");
+  body.className = "fs-body";
+  body.textContent = summary;
+  els.filterSummary.appendChild(body);
+}
+
+// ---- WebSocket / runtime ----
 
 function start() {
   stop();
@@ -267,9 +732,6 @@ function start() {
     return;
   }
   ws = myWs;
-  // Resume the audio context on this user gesture (browsers require one
-  // before AudioContext can play). We allocate lazily in playMatchSound,
-  // but a resume here keeps subsequent beeps reliable.
   ensureAudioContext();
 
   myWs.addEventListener("open", () => {
@@ -283,11 +745,10 @@ function start() {
     onMessage(ev.data);
   });
   myWs.addEventListener("close", () => {
-    // Ignore close events from a connection we've already replaced or stopped.
     if (myWs !== ws) return;
     els.connect.disabled = false;
     els.disconnect.disabled = true;
-    if (userStopped) return; // user-initiated; stop() already set status
+    if (userStopped) return;
     setStatus("disconnected — retrying in 3s", "err");
     if (reconnectTimer === null) {
       reconnectTimer = setTimeout(() => {
@@ -336,8 +797,6 @@ function ensureAudioContext() {
   }
 }
 
-// Two-note rising chime via Web Audio. Plays even when the tab is
-// backgrounded (Chromium does not throttle Web Audio in inactive tabs).
 function playMatchSound() {
   ensureAudioContext();
   if (!audioCtx) return;
@@ -362,7 +821,7 @@ function playMatchSound() {
       osc.stop(s + t.dur + 0.02);
     }
   } catch {
-    // ignore — audio is optional
+    // ignore
   }
 }
 
@@ -394,7 +853,6 @@ function rerender() {
     }
     lastNotifiedGameId = match.gameID;
   } else {
-    // Re-arm so the next match (even the same gameID after a brief drop) chimes.
     lastNotifiedGameId = null;
   }
 
@@ -416,10 +874,15 @@ function effectivePlayersPerTeam(gc) {
   if (teams === "Duos") return 2;
   if (teams === "Trios") return 3;
   if (teams === "Quads") return 4;
-  if (teams === "Humans Vs Nations") return max; // not meaningful — skip filter
+  if (teams === "Humans Vs Nations") return max;
   if (typeof teams === "number" && teams > 0)
     return Math.floor(max / Math.max(1, teams));
   return null;
+}
+
+function teamConfigMatches(want, got) {
+  if (/^\d+$/.test(want)) return got === parseInt(want, 10);
+  return got === want;
 }
 
 function isMatch(g, cfg) {
@@ -427,17 +890,14 @@ function isMatch(g, cfg) {
   if (!gc) return false;
 
   if (cfg.mode !== "any" && gc.gameMode !== cfg.mode) return false;
-  if (cfg.map !== "any" && gc.gameMap !== cfg.map) return false;
+  if (Array.isArray(cfg.maps) && cfg.maps.length > 0) {
+    if (!cfg.maps.includes(gc.gameMap)) return false;
+  }
   if (cfg.mapSize !== "any" && gc.gameMapSize !== cfg.mapSize) return false;
 
-  if (cfg.teamConfig !== "any") {
-    const want = cfg.teamConfig;
+  if (Array.isArray(cfg.teamConfigs) && cfg.teamConfigs.length > 0) {
     const got = gc.playerTeams;
-    if (/^\d+$/.test(want)) {
-      if (got !== parseInt(want, 10)) return false;
-    } else {
-      if (got !== want) return false;
-    }
+    if (!cfg.teamConfigs.some((w) => teamConfigMatches(w, got))) return false;
   }
 
   const max = typeof gc.maxPlayers === "number" ? gc.maxPlayers : 0;
@@ -503,12 +963,17 @@ function fmtCountdown(g, serverTime) {
 }
 
 function renderLobbies(games, serverTime, cfg) {
+  const matchCount = games.filter((g) => isMatch(g, cfg)).length;
   if (games.length === 0) {
+    els.lobbyCount.textContent = "";
     els.lobbies.innerHTML = "";
     els.lobbies.className = "empty";
     els.lobbies.textContent = "No public lobbies right now.";
     return;
   }
+  els.lobbyCount.textContent = `${games.length} public · ${matchCount} match${matchCount === 1 ? "" : "es"}`;
+  els.lobbyCount.className = "count-badge" + (matchCount > 0 ? " has-match" : "");
+
   els.lobbies.className = "";
   els.lobbies.innerHTML = "";
 
@@ -657,9 +1122,7 @@ function renderMatch(match, cfg) {
 }
 
 // True when the tool is running inside the side-panel iframe injected by
-// the extension's content script. In that case we ask the parent tab (which
-// is already on openfront.io) to navigate in place, rather than spawning a
-// new tab — the "Open in new tab" preference is force-ignored.
+// the extension's content script.
 const EMBEDDED =
   new URLSearchParams(location.search).get("embed") === "1" ||
   window.parent !== window;
@@ -673,7 +1136,7 @@ function openJoin(gameID, cfg) {
       );
       return;
     } catch {
-      // fall through to normal nav if postMessage fails
+      // fall through to normal nav
     }
   }
   const url = `https://${cfg.host}/game/${gameID}`;
@@ -687,21 +1150,36 @@ function openJoin(gameID, cfg) {
   }
 }
 
+function setupMultiSelectToggle(toggleEl, panelEl) {
+  toggleEl.addEventListener("click", () => {
+    const open = panelEl.classList.toggle("hidden");
+    toggleEl.setAttribute("aria-expanded", open ? "false" : "true");
+    const text = toggleEl.querySelector(".ms-toggle-text");
+    if (text) {
+      text.textContent = open
+        ? text.dataset.closedText || text.textContent.replace("− Hide", "+ Add")
+        : text.dataset.openText || text.textContent.replace(/^\+ Add/, "− Hide");
+    }
+  });
+}
+
 function init() {
   if (EMBEDDED) document.body.classList.add("embed");
-  populateSelects();
+  buildMapOptions();
+  buildTeamOptions();
   buildModifiers();
+  renderMapChips();
+  renderTeamChips();
   loadFilter();
   renderProfiles();
+  renderFilterSummary();
 
   // wire change events on every input so saving/rerender stay in sync
   const inputs = [
     els.host,
     els.worker,
     els.mode,
-    els.map,
     els.mapSize,
-    els.teamConfig,
     els.perTeam,
     els.minTotal,
     els.maxTotal,
@@ -717,6 +1195,7 @@ function init() {
     el.addEventListener("change", () => {
       saveFilter();
       rerender();
+      renderFilterSummary();
     });
     el.addEventListener("input", () => {
       saveFilter();
@@ -726,26 +1205,45 @@ function init() {
   els.connect.addEventListener("click", start);
   els.disconnect.addEventListener("click", stop);
   els.autoJoin.addEventListener("change", () => {
-    // re-arm so a current match can fire once after toggling
     lastAutoJoinedGameId = null;
   });
 
   els.sound.addEventListener("change", () => {
-    // Preview the chime when enabling — the click is a user gesture, so it
-    // also "primes" the AudioContext for subsequent backgrounded triggers.
     if (els.sound.checked) {
       ensureAudioContext();
       playMatchSound();
     }
-    // Re-arm notifier so the next match (or current match) chimes again.
     lastNotifiedGameId = null;
+  });
+
+  els.resetFilter.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Clear all targeting (maps, modes, modifiers)?")) return;
+    resetFilter();
+  });
+
+  setupMultiSelectToggle(els.mapToggle, els.mapPanel);
+  setupMultiSelectToggle(els.teamToggle, els.teamPanel);
+
+  els.mapSearch.addEventListener("input", () => {
+    filterMapOptions(els.mapSearch.value);
+  });
+  els.mapsClear.addEventListener("click", () => {
+    selectedMaps.clear();
+    onMapsChanged();
   });
 
   els.saveProfile.addEventListener("click", () => {
     const name = els.profileName.value.trim();
     if (!name) return;
+    const folder = els.profileFolder.value.trim();
     const profiles = loadProfiles();
-    profiles[name] = getFilter();
+    profiles[name] = {
+      filter: getFilter(),
+      folder,
+      createdAt: profiles[name]?.createdAt ?? Date.now(),
+    };
     saveProfiles(profiles);
     els.profileName.value = "";
     renderProfiles();

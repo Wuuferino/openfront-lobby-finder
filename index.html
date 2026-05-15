@@ -19,6 +19,8 @@
       </p>
     </header>
 
+    <div id="filterSummary" class="filter-summary"></div>
+
     <section class="controls">
       <details open>
         <summary><span class="section-title">Connection</span></summary>
@@ -52,7 +54,17 @@
       </details>
 
       <details open>
-        <summary><span class="section-title">Target — map &amp; mode</span></summary>
+        <summary>
+          <span class="section-title">Target — map &amp; mode</span>
+          <button
+            type="button"
+            id="resetFilter"
+            class="reset-btn"
+            title="Clear all filter targeting (keeps connection settings)"
+          >
+            Reset
+          </button>
+        </summary>
         <div class="row">
           <label>
             Game mode
@@ -61,10 +73,6 @@
               <option value="Team">Team</option>
               <option value="Free For All">FFA</option>
             </select>
-          </label>
-          <label class="grow">
-            Map
-            <select id="map"></select>
           </label>
           <label>
             Map size
@@ -75,11 +83,60 @@
             </select>
           </label>
         </div>
+
+        <!-- Multi-select: maps -->
+        <div class="ms-block">
+          <div class="ms-label">Maps</div>
+          <div class="ms-chips" id="mapChips"></div>
+          <button
+            type="button"
+            class="ms-toggle"
+            id="mapToggle"
+            aria-expanded="false"
+          >
+            <span class="ms-toggle-text">+ Add maps</span>
+            <span class="ms-caret">▾</span>
+          </button>
+          <div class="ms-panel hidden" id="mapPanel">
+            <div class="ms-panel-tools">
+              <input
+                id="mapSearch"
+                type="search"
+                placeholder="Search maps…"
+                autocomplete="off"
+              />
+              <button
+                type="button"
+                class="ms-link"
+                id="mapsClear"
+                title="Clear all selected maps"
+              >
+                Clear
+              </button>
+            </div>
+            <div class="ms-options" id="mapOptions"></div>
+          </div>
+        </div>
+
+        <!-- Multi-select: team config -->
+        <div class="ms-block">
+          <div class="ms-label">Team setups</div>
+          <div class="ms-chips" id="teamChips"></div>
+          <button
+            type="button"
+            class="ms-toggle"
+            id="teamToggle"
+            aria-expanded="false"
+          >
+            <span class="ms-toggle-text">+ Add team setups</span>
+            <span class="ms-caret">▾</span>
+          </button>
+          <div class="ms-panel hidden" id="teamPanel">
+            <div class="ms-options" id="teamOptions"></div>
+          </div>
+        </div>
+
         <div class="row">
-          <label>
-            Team config
-            <select id="teamConfig"></select>
-          </label>
           <label>
             Min players / team
             <input id="perTeam" type="number" min="0" max="200" value="0" />
@@ -143,12 +200,26 @@
 
       <details>
         <summary><span class="section-title">Profiles</span></summary>
-        <div class="row">
+        <div class="row save-row">
           <label class="grow">
-            Profile name
-            <input id="profileName" type="text" placeholder="e.g. Big Team" />
+            <span class="label-text">Profile name</span>
+            <input
+              id="profileName"
+              type="text"
+              placeholder="e.g. Big Team Mars"
+            />
           </label>
-          <button id="saveProfile">Save</button>
+          <label class="grow">
+            <span class="label-text">Folder (optional)</span>
+            <input
+              id="profileFolder"
+              type="text"
+              list="folderSuggestions"
+              placeholder="e.g. Big Team Lobbies"
+            />
+            <datalist id="folderSuggestions"></datalist>
+          </label>
+          <button id="saveProfile" class="primary">Save current</button>
         </div>
         <div id="profileList" class="profile-list"></div>
       </details>
@@ -160,7 +231,10 @@
     </section>
 
     <section>
-      <h2>All public lobbies</h2>
+      <h2>
+        All public lobbies
+        <span id="lobbyCount" class="count-badge"></span>
+      </h2>
       <div id="lobbies" class="empty">No data yet.</div>
     </section>
 
