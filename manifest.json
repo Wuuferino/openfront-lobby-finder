@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "OpenFront Lobby Targeter",
-  "version": "0.3.2",
-  "description": "Side panel for OpenFront.io — target lobbies by map, mode, team setup, and modifiers, with auto-join. Auto-hides during gameplay.",
+  "name": "OpenFront Lobby Finder",
+  "version": "0.4.0",
+  "description": "Find the OpenFront.io public lobby you actually want. Filter by map, mode, team setup, and modifiers, with one-click and auto-join. Auto-hides during gameplay.",
   "action": {
-    "default_title": "Open OpenFront",
+    "default_title": "OpenFront Lobby Finder — open openfront.io",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

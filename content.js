@@ -1,4 +1,4 @@
-// Injects the lobby targeter as a slide-out panel on the right edge of
+// Injects the lobby finder as a slide-out panel on the right edge of
 // openfront.io. Auto-hides whenever gameplay is active
 // (document.body.classList contains "in-game" — set by Main.ts when the
 // game has actually started).
@@ -17,7 +17,7 @@
   const toggle = document.createElement("button");
   toggle.id = "ofbt-toggle";
   toggle.type = "button";
-  toggle.setAttribute("aria-label", "Toggle OpenFront lobby targeter");
+  toggle.setAttribute("aria-label", "Toggle OpenFront Lobby Finder");
   toggle.innerHTML = '<span class="ofbt-arrow">‹</span>';
   host.appendChild(toggle);
 
@@ -27,7 +27,7 @@
   const iframe = document.createElement("iframe");
   iframe.id = "ofbt-iframe";
   iframe.src = chrome.runtime.getURL("index.html") + "?embed=1";
-  iframe.setAttribute("title", "OpenFront Lobby Targeter");
+  iframe.setAttribute("title", "OpenFront Lobby Finder");
   panel.appendChild(iframe);
 
   host.appendChild(panel);

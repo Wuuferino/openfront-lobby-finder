@@ -1,0 +1,18 @@
+# Private dev-context for Claude Code — not part of the public extension
+CLAUDE.md
+
+# Build artifacts (we ship zips via GitHub Releases, not the repo)
+*.zip
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Anything generated under build/dist if we ever add a build step
+node_modules/
+dist/
+build/
