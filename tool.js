@@ -26,6 +26,7 @@ const els = {
   multMin: document.getElementById("multMin"),
   multMax: document.getElementById("multMax"),
   autoJoin: document.getElementById("autoJoin"),
+  sound: document.getElementById("sound"),
   newTab: document.getElementById("newTab"),
   connect: document.getElementById("connect"),
   disconnect: document.getElementById("disconnect"),
@@ -42,9 +43,12 @@ for (const m of MODIFIERS) modifierState[m.key] = "any";
 
 let ws = null;
 let reconnectTimer = null;
+let userStopped = true;
 let lastAutoJoinedGameId = null;
+let lastNotifiedGameId = null;
 let lastFlat = [];
 let lastServerTime = 0;
+let audioCtx = null;
 
 function setStatus(text, kind) {
   els.status.textContent = text;
@@ -135,6 +139,7 @@ function getFilter() {
     minTotal: Math.max(0, parseInt(els.minTotal.value, 10) || 0),
     maxTotal: maxTotalRaw === "" ? null : parseInt(maxTotalRaw, 10),
     autoJoin: els.autoJoin.checked,
+    sound: els.sound.checked,
     newTab: els.newTab.checked,
     modifiers: { ...modifierState },
     goldMin: goldMinRaw === "" ? null : parseFloat(goldMinRaw),
@@ -158,6 +163,7 @@ function setFilter(f) {
     els.maxTotal.value = f.maxTotal;
   else els.maxTotal.value = "";
   els.autoJoin.checked = !!f.autoJoin;
+  els.sound.checked = f.sound !== false;
   els.newTab.checked = f.newTab !== false;
   if (f.modifiers) {
     for (const m of MODIFIERS) {
@@ -249,38 +255,56 @@ function renderProfiles() {
 
 function start() {
   stop();
+  userStopped = false;
   const cfg = getFilter();
   const url = `wss://${cfg.host}/w${cfg.workerIdx}/lobbies`;
   setStatus(`connecting ${url}…`);
+  let myWs;
   try {
-    ws = new WebSocket(url);
+    myWs = new WebSocket(url);
   } catch (e) {
     setStatus(`bad URL: ${e.message}`, "err");
     return;
   }
-  ws.addEventListener("open", () => {
+  ws = myWs;
+  // Resume the audio context on this user gesture (browsers require one
+  // before AudioContext can play). We allocate lazily in playMatchSound,
+  // but a resume here keeps subsequent beeps reliable.
+  ensureAudioContext();
+
+  myWs.addEventListener("open", () => {
+    if (myWs !== ws) return;
     setStatus(`connected to w${cfg.workerIdx}@${cfg.host}`, "ok");
     els.connect.disabled = true;
     els.disconnect.disabled = false;
   });
-  ws.addEventListener("message", (ev) => onMessage(ev.data));
-  ws.addEventListener("close", () => {
-    setStatus("disconnected — retrying in 3s", "err");
+  myWs.addEventListener("message", (ev) => {
+    if (myWs !== ws) return;
+    onMessage(ev.data);
+  });
+  myWs.addEventListener("close", () => {
+    // Ignore close events from a connection we've already replaced or stopped.
+    if (myWs !== ws) return;
     els.connect.disabled = false;
     els.disconnect.disabled = true;
+    if (userStopped) return; // user-initiated; stop() already set status
+    setStatus("disconnected — retrying in 3s", "err");
     if (reconnectTimer === null) {
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
+        if (userStopped) return;
         if (ws === null || ws.readyState === WebSocket.CLOSED) start();
       }, 3000);
     }
   });
-  ws.addEventListener("error", () => {
+  myWs.addEventListener("error", () => {
+    if (myWs !== ws) return;
     setStatus("websocket error", "err");
   });
 }
 
 function stop() {
+  userStopped = true;
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -296,6 +320,50 @@ function stop() {
   els.connect.disabled = false;
   els.disconnect.disabled = true;
   setStatus("idle");
+}
+
+function ensureAudioContext() {
+  try {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  } catch {
+    // ignore — audio is optional
+  }
+}
+
+// Two-note rising chime via Web Audio. Plays even when the tab is
+// backgrounded (Chromium does not throttle Web Audio in inactive tabs).
+function playMatchSound() {
+  ensureAudioContext();
+  if (!audioCtx) return;
+  try {
+    const now = audioCtx.currentTime;
+    const tones = [
+      { freq: 740, start: 0, dur: 0.16 },
+      { freq: 988, start: 0.14, dur: 0.32 },
+    ];
+    for (const t of tones) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = t.freq;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const s = now + t.start;
+      gain.gain.setValueAtTime(0, s);
+      gain.gain.linearRampToValueAtTime(0.28, s + 0.02);
+      gain.gain.linearRampToValueAtTime(0, s + t.dur);
+      osc.start(s);
+      osc.stop(s + t.dur + 0.02);
+    }
+  } catch {
+    // ignore — audio is optional
+  }
 }
 
 function onMessage(raw) {
@@ -319,6 +387,17 @@ function rerender() {
   renderLobbies(lastFlat, lastServerTime, cfg);
   const match = lastFlat.find((g) => isMatch(g, cfg));
   renderMatch(match, cfg);
+
+  if (match) {
+    if (cfg.sound && match.gameID !== lastNotifiedGameId) {
+      playMatchSound();
+    }
+    lastNotifiedGameId = match.gameID;
+  } else {
+    // Re-arm so the next match (even the same gameID after a brief drop) chimes.
+    lastNotifiedGameId = null;
+  }
+
   if (
     match &&
     cfg.autoJoin &&
@@ -631,6 +710,7 @@ function init() {
     els.multMin,
     els.multMax,
     els.autoJoin,
+    els.sound,
     els.newTab,
   ];
   for (const el of inputs) {
@@ -648,6 +728,17 @@ function init() {
   els.autoJoin.addEventListener("change", () => {
     // re-arm so a current match can fire once after toggling
     lastAutoJoinedGameId = null;
+  });
+
+  els.sound.addEventListener("change", () => {
+    // Preview the chime when enabling — the click is a user gesture, so it
+    // also "primes" the AudioContext for subsequent backgrounded triggers.
+    if (els.sound.checked) {
+      ensureAudioContext();
+      playMatchSound();
+    }
+    // Re-arm notifier so the next match (or current match) chimes again.
+    lastNotifiedGameId = null;
   });
 
   els.saveProfile.addEventListener("click", () => {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenFront Lobby Finder",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Find the OpenFront.io public lobby you actually want. Filter by map, mode, team setup, and modifiers, with one-click and auto-join. Auto-hides during gameplay.",
   "action": {
     "default_title": "OpenFront Lobby Finder — open openfront.io",
