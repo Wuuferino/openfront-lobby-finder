@@ -221,6 +221,19 @@
           </label>
           <button id="saveProfile" class="primary">Save current</button>
         </div>
+        <div class="row backup-row">
+          <button id="exportProfiles" type="button" title="Download a JSON backup of all your profiles">
+            Export all profiles
+          </button>
+          <button id="importProfiles" type="button" title="Load profiles from a JSON backup">
+            Import profiles…
+          </button>
+          <input id="importFile" type="file" accept="application/json,.json" class="hidden" />
+          <span class="hint backup-hint">
+            Back up your profiles before reinstalling the extension — Chrome storage
+            doesn't survive uninstall.
+          </span>
+        </div>
         <div id="profileList" class="profile-list"></div>
       </details>
     </section>

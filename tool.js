@@ -39,6 +39,9 @@ const els = {
   folderSuggestions: document.getElementById("folderSuggestions"),
   saveProfile: document.getElementById("saveProfile"),
   profileList: document.getElementById("profileList"),
+  exportProfiles: document.getElementById("exportProfiles"),
+  importProfiles: document.getElementById("importProfiles"),
+  importFile: document.getElementById("importFile"),
   // Multi-selects
   mapChips: document.getElementById("mapChips"),
   mapToggle: document.getElementById("mapToggle"),
@@ -688,6 +691,91 @@ function editProfile(name, entry, allProfiles) {
   renderProfiles();
 }
 
+function exportProfilesToFile() {
+  const profiles = loadProfiles();
+  const payload = {
+    type: "openfront-lobby-finder-profiles",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profiles,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .replace(/T/, "_")
+    .replace(/Z$/, "");
+  a.download = `openfront-lobby-finder-profiles_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importProfilesFromText(text) {
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return { error: "File is not valid JSON." };
+  }
+  // Accept either {profiles: {...}} or a bare {name: entry, ...} object.
+  let incoming;
+  if (
+    payload &&
+    typeof payload === "object" &&
+    payload.profiles &&
+    typeof payload.profiles === "object"
+  ) {
+    incoming = payload.profiles;
+  } else if (payload && typeof payload === "object") {
+    incoming = payload;
+  } else {
+    return { error: "Unrecognised file format." };
+  }
+  const existing = loadProfiles();
+  const existingNames = new Set(Object.keys(existing));
+  const collisions = Object.keys(incoming).filter((n) =>
+    existingNames.has(n),
+  );
+  let strategy = "merge"; // default: rename collisions with " (imported)"
+  if (collisions.length > 0) {
+    const reply = confirm(
+      `${collisions.length} profile name(s) already exist:\n` +
+        collisions.slice(0, 5).join(", ") +
+        (collisions.length > 5 ? ", …" : "") +
+        `\n\nOK = overwrite existing profiles.\nCancel = keep both (imported copies get " (imported)" appended).`,
+    );
+    strategy = reply ? "overwrite" : "rename";
+  }
+  let imported = 0;
+  let skipped = 0;
+  for (const [name, raw] of Object.entries(incoming)) {
+    const migrated = migrateProfileEntry(name, raw);
+    if (!migrated) {
+      skipped++;
+      continue;
+    }
+    let finalName = name;
+    if (strategy === "rename" && existingNames.has(finalName)) {
+      let n = 2;
+      let candidate = `${name} (imported)`;
+      while (existing[candidate]) candidate = `${name} (imported ${n++})`;
+      finalName = candidate;
+    }
+    existing[finalName] = migrated;
+    existingNames.add(finalName);
+    imported++;
+  }
+  saveProfiles(existing);
+  return { imported, skipped, total: Object.keys(incoming).length };
+}
+
 function refreshFolderSuggestions(profiles) {
   els.folderSuggestions.innerHTML = "";
   const folders = new Set();
@@ -1247,6 +1335,44 @@ function init() {
     saveProfiles(profiles);
     els.profileName.value = "";
     renderProfiles();
+  });
+
+  els.exportProfiles.addEventListener("click", () => {
+    const count = Object.keys(loadProfiles()).length;
+    if (count === 0) {
+      alert("No profiles to export yet.");
+      return;
+    }
+    exportProfilesToFile();
+  });
+
+  els.importProfiles.addEventListener("click", () => {
+    els.importFile.click();
+  });
+
+  els.importFile.addEventListener("change", () => {
+    const file = els.importFile.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = importProfilesFromText(String(reader.result ?? ""));
+      els.importFile.value = ""; // allow re-import of the same file
+      if (result.error) {
+        alert(`Import failed: ${result.error}`);
+        return;
+      }
+      renderProfiles();
+      const msg =
+        `Imported ${result.imported} of ${result.total} profile` +
+        (result.total === 1 ? "" : "s") +
+        (result.skipped ? ` (skipped ${result.skipped})` : "");
+      alert(msg);
+    };
+    reader.onerror = () => {
+      alert("Could not read that file.");
+      els.importFile.value = "";
+    };
+    reader.readAsText(file);
   });
 
   setStatus("idle");
