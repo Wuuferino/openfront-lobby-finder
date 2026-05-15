@@ -1,6 +1,10 @@
 # Private dev-context for Claude Code — not part of the public extension
 CLAUDE.md
 
+# Local dev tools (kept on disk so future sessions can re-run them, but not
+# part of the shipped extension and not worth versioning publicly)
+gen_icons.py
+
 # Build artifacts (we ship zips via GitHub Releases, not the repo)
 *.zip
 
