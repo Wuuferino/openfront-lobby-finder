@@ -42,14 +42,14 @@ lobby appears.
 ## Install
 
 1. Download `openfront_lobby_finder.zip` from the latest
-   [release](https://github.com/Wuuferino/openfront-lobby-finder/releases)
-   and **unzip it somewhere you'll keep it** — Chromium loads the folder
-   directly, so moving or deleting it later breaks the extension.
+   [release](https://github.com/Wuuferino/openfront-lobby-finder/releases).
 2. Open `brave://extensions/` (or `chrome://extensions/`, `edge://extensions/`).
 3. Toggle **Developer mode** on (top-right corner).
-4. Click **Load unpacked** and pick the unzipped folder (the one that
-   contains `manifest.json`).
+4. **Drag the zip onto the extensions page.** Confirm any prompt and you're done.
 5. Optional: pin the toolbar icon for a one-click way to jump to openfront.io.
+
+> If your browser refuses the drag-and-drop, unzip the file somewhere you'll
+> keep it and use **Load unpacked** to pick the unzipped folder instead.
 
 No accounts, no API keys, no permissions beyond `https://openfront.io/*`.
 
