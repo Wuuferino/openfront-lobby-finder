@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenFront Lobby Finder",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA404ZWOtXkloJjCY84t9HqJaIoKH/We6PoFzJiTOyVuBJJCq9PCACHNpCXOWxxkNEMvkg8UaD3DGEB3yQN2xGcBwlSuh+LGmxba9hwajK2D63tvnPYfX5FwWVw6dcP72hgzAUCnq0UtkNaz8pkIORAGDwW5dIpNREQA0dtJHLWe7s8Koc7IPXr4sDTgeH4UtfGrxDV+Q4W2lUMSV2KMNVNVHLLMTQZD1Wo1VKE2NOt//dsoLCPYzPspdbKI+8s54+1dJdbSoQHVnAQL+apWRb8nmSgKy93Acv/S2mwbdwr20oQdj+IUGSvR1xDpq7gd33TZVSBcF5pUcpb6cCly3RFQIDAQAB",
   "description": "Find the OpenFront.io public lobby you want — filter by map, mode, team, modifiers; one-click and auto-join. Auto-hides in-game.",
   "action": {

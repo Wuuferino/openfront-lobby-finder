@@ -89,9 +89,73 @@
     });
   }
 
-  // Messages from the iframe (extension origin) — we handle joining here
-  // because the parent tab is already on openfront.io and can route via
-  // history without any popup.
+  // Background-tab notification: when a match is found and the user is
+  // looking at another tab, we flash the document title and swap the
+  // favicon. The iframe sends "match" / "match-cleared" via postMessage;
+  // we restore everything on the first visibilitychange that brings the
+  // tab back to the foreground.
+  const MATCH_FAVICON_URL = chrome.runtime.getURL("icons/icon128.png");
+  let titleFlashId = null;
+  let originalTitle = null;
+  let originalFaviconHref = null;
+  let currentMatchLabel = null;
+
+  function getFaviconLink() {
+    let link = document.querySelector('link[rel~="icon"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    return link;
+  }
+
+  function startMatchAlert(label) {
+    currentMatchLabel = label;
+    // No point flashing while the user is already looking at the tab.
+    if (!document.hidden) return;
+    if (titleFlashId !== null) return; // already flashing
+    if (originalTitle === null) originalTitle = document.title;
+    const link = getFaviconLink();
+    if (originalFaviconHref === null) originalFaviconHref = link.href;
+    link.href = MATCH_FAVICON_URL;
+    let on = false;
+    const tick = () => {
+      on = !on;
+      document.title = on
+        ? `🟢 MATCH — ${currentMatchLabel ?? "OpenFront"}`
+        : (originalTitle ?? "OpenFront.io");
+    };
+    tick();
+    titleFlashId = setInterval(tick, 1000);
+  }
+
+  function stopMatchAlert() {
+    currentMatchLabel = null;
+    if (titleFlashId !== null) {
+      clearInterval(titleFlashId);
+      titleFlashId = null;
+    }
+    if (originalTitle !== null) {
+      document.title = originalTitle;
+      originalTitle = null;
+    }
+    if (originalFaviconHref !== null) {
+      const link = getFaviconLink();
+      link.href = originalFaviconHref;
+      originalFaviconHref = null;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) stopMatchAlert();
+  });
+
+  // Messages from the iframe (extension origin):
+  //   join          — navigate this tab to /game/<id>
+  //   match         — start background-tab alert (sound is fired separately)
+  //   match-cleared — stop the alert
+  //   close         — collapse the panel
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || typeof data !== "object" || data.source !== "ofbt") return;
@@ -104,6 +168,11 @@
       } else {
         window.location.href = "/game/" + id;
       }
+    } else if (data.type === "match") {
+      const label = typeof data.lobbyTitle === "string" ? data.lobbyTitle : null;
+      startMatchAlert(label);
+    } else if (data.type === "match-cleared") {
+      stopMatchAlert();
     } else if (data.type === "close") {
       setOpen(false);
     }

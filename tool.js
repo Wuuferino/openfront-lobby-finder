@@ -871,7 +871,112 @@ function stop() {
   setStatus("idle");
 }
 
+// Match-found chime.
+//
+// We pre-render a 6-note rising arpeggio to a WAV blob at module load and
+// play it through HTMLAudioElement instead of triggering raw AudioContext
+// nodes per call. A backgrounded tab's AudioContext can drift into the
+// `suspended` state silently, and Chromium's autoplay heuristics treat
+// the media-element pipeline more permissively than direct Web Audio for
+// inactive-tab playback. Same samples either way; this delivery path is
+// just much more reliable for an alt-tabbed user.
+
+let chimeEl = null;
+
+function encodeWav(samples, sampleRate) {
+  const byteRate = sampleRate * 2;
+  const dataSize = samples.length * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  const writeStr = (off, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    off += 2;
+  }
+  return buf;
+}
+
+function buildChimeWav() {
+  const sampleRate = 22050;
+  const duration = 1.5;
+  const n = Math.floor(sampleRate * duration);
+  const out = new Float32Array(n);
+  // Two passes of a rising D5 / F#5 / B5 arpeggio.
+  const notes = [
+    { freq: 587.33, t0: 0.0, dur: 0.18, gain: 0.55 },
+    { freq: 739.99, t0: 0.16, dur: 0.18, gain: 0.55 },
+    { freq: 987.77, t0: 0.32, dur: 0.42, gain: 0.7 },
+    { freq: 587.33, t0: 0.78, dur: 0.16, gain: 0.55 },
+    { freq: 739.99, t0: 0.92, dur: 0.16, gain: 0.55 },
+    { freq: 987.77, t0: 1.06, dur: 0.4, gain: 0.7 },
+  ];
+  for (const note of notes) {
+    const start = Math.floor(note.t0 * sampleRate);
+    const len = Math.floor(note.dur * sampleRate);
+    for (let i = 0; i < len; i++) {
+      const idx = start + i;
+      if (idx >= n) break;
+      const t = i / sampleRate;
+      const attack = Math.min(1, t / 0.005);
+      const release = Math.min(1, (note.dur - t) / 0.05);
+      const env = attack * Math.max(0, release);
+      const wave =
+        Math.sin(2 * Math.PI * note.freq * t) +
+        0.35 * Math.sin(2 * Math.PI * note.freq * 2 * t);
+      out[idx] += wave * env * note.gain;
+    }
+  }
+  // Normalize to peak 0.9 so it's loud without clipping.
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(out[i]);
+    if (a > peak) peak = a;
+  }
+  if (peak > 0) {
+    const scale = 0.9 / peak;
+    for (let i = 0; i < n; i++) out[i] *= scale;
+  }
+  return encodeWav(out, sampleRate);
+}
+
+function getChimeElement() {
+  if (chimeEl) return chimeEl;
+  try {
+    const buf = buildChimeWav();
+    const blob = new Blob([buf], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+    chimeEl = new Audio(url);
+    chimeEl.preload = "auto";
+    chimeEl.volume = 1.0;
+  } catch {
+    chimeEl = null;
+  }
+  return chimeEl;
+}
+
 function ensureAudioContext() {
+  // Still kept for the on-toggle preview gesture below, even though the
+  // alert itself plays through chimeEl. Calling .resume() on a user
+  // gesture also unblocks subsequent media-element autoplay in some
+  // Chromium builds, which is worth doing on Start-watching and on
+  // toggling the sound checkbox.
   try {
     if (!audioCtx) {
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -886,27 +991,16 @@ function ensureAudioContext() {
 }
 
 function playMatchSound() {
-  ensureAudioContext();
-  if (!audioCtx) return;
+  const a = getChimeElement();
+  if (!a) return;
   try {
-    const now = audioCtx.currentTime;
-    const tones = [
-      { freq: 740, start: 0, dur: 0.16 },
-      { freq: 988, start: 0.14, dur: 0.32 },
-    ];
-    for (const t of tones) {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = t.freq;
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      const s = now + t.start;
-      gain.gain.setValueAtTime(0, s);
-      gain.gain.linearRampToValueAtTime(0.28, s + 0.02);
-      gain.gain.linearRampToValueAtTime(0, s + t.dur);
-      osc.start(s);
-      osc.stop(s + t.dur + 0.02);
+    a.currentTime = 0;
+    const p = a.play();
+    if (p && typeof p.catch === "function") {
+      // Autoplay can still be blocked if the user hasn't interacted with
+      // this iframe yet. Start-watching and the sound-toggle preview both
+      // count as gestures and unblock subsequent plays.
+      p.catch(() => {});
     }
   } catch {
     // ignore
@@ -936,11 +1030,13 @@ function rerender() {
   renderMatch(match, cfg);
 
   if (match) {
-    if (cfg.sound && match.gameID !== lastNotifiedGameId) {
-      playMatchSound();
+    if (match.gameID !== lastNotifiedGameId) {
+      if (cfg.sound) playMatchSound();
+      notifyParentMatch(match);
     }
     lastNotifiedGameId = match.gameID;
   } else {
+    if (lastNotifiedGameId !== null) notifyParentMatchCleared();
     lastNotifiedGameId = null;
   }
 
@@ -952,6 +1048,35 @@ function rerender() {
   ) {
     lastAutoJoinedGameId = match.gameID;
     openJoin(match.gameID, cfg);
+  }
+}
+
+function notifyParentMatch(match) {
+  if (!EMBEDDED) return;
+  try {
+    window.parent.postMessage(
+      {
+        source: "ofbt",
+        type: "match",
+        gameID: match.gameID,
+        lobbyTitle: lobbyTitle(match),
+      },
+      "*",
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function notifyParentMatchCleared() {
+  if (!EMBEDDED) return;
+  try {
+    window.parent.postMessage(
+      { source: "ofbt", type: "match-cleared" },
+      "*",
+    );
+  } catch {
+    // ignore
   }
 }
 
