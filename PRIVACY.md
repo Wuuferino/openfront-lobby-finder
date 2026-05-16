@@ -1,6 +1,6 @@
 # Privacy Policy — OpenFront Lobby Finder
 
-_Last updated: 2026-05-15_
+_Last updated: 2026-05-15 (revised)_
 
 ## TL;DR
 
@@ -42,7 +42,7 @@ The extension does **not** collect, process, or transmit any of the following:
 
 The extension's manifest declares:
 
-- `"permissions": []` (none)
+- `"permissions": ["notifications"]` — used **only** to show a local desktop notification when a lobby matches your filter, so you can be alerted while the OpenFront tab is in the background. Notifications are rendered entirely by your operating system; no data is sent to any server.
 - `"host_permissions": []` (none)
 - Content scripts that run **only** on `https://openfront.io/*` and `https://*.openfront.io/*`.
 - A toolbar-click handler that opens or focuses an `openfront.io` tab.

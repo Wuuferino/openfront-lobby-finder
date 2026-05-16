@@ -1051,33 +1051,64 @@ function rerender() {
   }
 }
 
-function notifyParentMatch(match) {
-  if (!EMBEDDED) return;
+function sendRuntimeMessage(msg) {
   try {
-    window.parent.postMessage(
-      {
-        source: "ofbt",
-        type: "match",
-        gameID: match.gameID,
-        lobbyTitle: lobbyTitle(match),
-      },
-      "*",
-    );
+    if (
+      typeof chrome !== "undefined" &&
+      chrome.runtime &&
+      typeof chrome.runtime.sendMessage === "function"
+    ) {
+      // Returns a promise in MV3; ignore failures (service worker may be
+      // dormant for an instant before the runtime spins it up — the next
+      // message gets through).
+      const r = chrome.runtime.sendMessage(msg);
+      if (r && typeof r.catch === "function") r.catch(() => {});
+    }
   } catch {
     // ignore
   }
 }
 
-function notifyParentMatchCleared() {
-  if (!EMBEDDED) return;
-  try {
-    window.parent.postMessage(
-      { source: "ofbt", type: "match-cleared" },
-      "*",
-    );
-  } catch {
-    // ignore
+function notifyParentMatch(match) {
+  const title = lobbyTitle(match);
+  if (EMBEDDED) {
+    try {
+      window.parent.postMessage(
+        {
+          source: "ofbt",
+          type: "match",
+          gameID: match.gameID,
+          lobbyTitle: title,
+        },
+        "*",
+      );
+    } catch {
+      // ignore
+    }
   }
+  // Always notify the service worker — it shows an OS-level desktop
+  // notification, which is the only reliable alert path when the user
+  // has the openfront.io tab in the background or the Chrome window
+  // minimized.
+  sendRuntimeMessage({
+    type: "ofbt-match",
+    gameID: match.gameID,
+    lobbyTitle: title,
+  });
+}
+
+function notifyParentMatchCleared() {
+  if (EMBEDDED) {
+    try {
+      window.parent.postMessage(
+        { source: "ofbt", type: "match-cleared" },
+        "*",
+      );
+    } catch {
+      // ignore
+    }
+  }
+  sendRuntimeMessage({ type: "ofbt-match-cleared" });
 }
 
 function effectivePlayersPerTeam(gc) {
