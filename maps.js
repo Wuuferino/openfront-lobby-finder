@@ -175,6 +175,7 @@ export const MODIFIERS = [
   { key: "isSAMsDisabled", label: "SAMs disabled" },
   { key: "isPeaceTime", label: "Peace time" },
   { key: "isWaterNukes", label: "Water nukes" },
+  { key: "isDoomsdayClock", label: "Doomsday clock" },
 ];
 
 export const TEAM_PRESETS = [
