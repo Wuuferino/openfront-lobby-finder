@@ -157,9 +157,12 @@
   //   match-cleared — stop the alert
   //   close         — collapse the panel
   window.addEventListener("message", (event) => {
+    // Only our own iframe: other frames on the page (ads) can post here too.
+    if (event.source !== iframe.contentWindow) return;
     const data = event.data;
     if (!data || typeof data !== "object" || data.source !== "ofbt") return;
     if (data.type === "join" && typeof data.gameID === "string") {
+      if (document.body.classList.contains("in-game")) return;
       const id = data.gameID;
       if (!/^[A-Za-z0-9]{8}$/.test(id)) return;
       if (data.newTab) {
